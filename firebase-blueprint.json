@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user progress, XP, and streak information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "photoURL": { "type": "string" },
+        "xp": { "type": "integer", "description": "Total experience points" },
+        "multiplier": { "type": "number", "description": "Current XP multiplier" },
+        "streak": { "type": "integer", "description": "Current daily streak" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "xp", "multiplier", "streak"]
+    },
+    "Task": {
+      "title": "Task Activity",
+      "description": "A generated task for the user to complete.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "niche": { "type": "string" },
+        "toughness": { "type": "string", "enum": ["easy", "medium", "hard"] },
+        "duration": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed"] },
+        "xpEarned": { "type": "integer" },
+        "multiplierApplied": { "type": "number" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "niche", "toughness", "duration", "title", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile document"
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Individual task activities"
+    }
+  }
+}
