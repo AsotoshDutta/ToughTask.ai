@@ -1,12 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  signOut, 
-  User 
-} from 'firebase/auth';
-import { 
   doc, 
   getDoc, 
   setDoc, 
@@ -206,13 +199,20 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 // --- Main App ---
 
+export interface LocalUser {
+  uid: string;
+  displayName: string;
+}
+
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<LocalUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [activeTask, setActiveTask] = useState<TaskActivity | null>(null);
   const [history, setHistory] = useState<TaskActivity[]>([]);
+  const [usernameInput, setUsernameInput] = useState('');
   
   const [selectedNiche, setSelectedNiche] = useState(NICHES[0]);
   const [customNiche, setCustomNiche] = useState('');
@@ -222,11 +222,11 @@ export default function App() {
   const [showAllHistory, setShowAllHistory] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      setLoading(false);
-    });
-    return () => unsubscribe();
+    const savedUsername = localStorage.getItem('tough_task_username');
+    if (savedUsername) {
+      setUser({ uid: savedUsername, displayName: savedUsername });
+    }
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -257,7 +257,7 @@ export default function App() {
     };
   }, [user]);
 
-  const ensureProfile = async (u: User) => {
+  const ensureProfile = async (u: LocalUser) => {
     const userRef = doc(db, 'users', u.uid);
     try {
       const snap = await getDoc(userRef);
@@ -265,8 +265,8 @@ export default function App() {
         const newProfile: UserProfile = {
           uid: u.uid,
           displayName: u.displayName,
-          email: u.email,
-          photoURL: u.photoURL,
+          email: null,
+          photoURL: `https://picsum.photos/seed/${u.uid}/150/150`,
           xp: 0,
           multiplier: 1.0,
           streak: 0,
@@ -303,15 +303,58 @@ export default function App() {
     });
   };
 
-  const handleLogin = async () => {
+  const handleLogin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setAuthError(null);
+    const cleanUsername = usernameInput.trim().toLowerCase();
+    
+    if (!cleanUsername) {
+      setAuthError('Please enter a username.');
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_\-]+$/.test(cleanUsername)) {
+      setAuthError('Username can only contain alphanumeric characters, underscores, or hyphens.');
+      return;
+    }
+
+    setLoading(true);
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
-    } catch (error) {
-      console.error('Login failed', error);
+      const userRef = doc(db, 'users', cleanUsername);
+      const snap = await getDocFromServer(userRef);
+      
+      if (snap.exists()) {
+        const existingProfile = snap.data();
+        localStorage.setItem('tough_task_username', cleanUsername);
+        setUser({ uid: cleanUsername, displayName: existingProfile.displayName || usernameInput.trim() });
+      } else {
+        const newProfile: UserProfile = {
+          uid: cleanUsername,
+          displayName: usernameInput.trim(),
+          email: null,
+          photoURL: `https://picsum.photos/seed/${cleanUsername}/150/150`,
+          xp: 0,
+          multiplier: 1.0,
+          streak: 0,
+          createdAt: new Date().toISOString(),
+        };
+        await setDoc(userRef, newProfile);
+        localStorage.setItem('tough_task_username', cleanUsername);
+        setUser({ uid: cleanUsername, displayName: usernameInput.trim() });
+      }
+    } catch (error: any) {
+      console.error('Username login failed', error);
+      setAuthError(error?.message || 'Accessing profile failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleLogout = () => signOut(auth);
+  const handleLogout = () => {
+    localStorage.removeItem('tough_task_username');
+    setUser(null);
+    setUsernameInput('');
+  };
 
   const handleGenerate = async () => {
     if (!user) return;
@@ -395,38 +438,75 @@ export default function App() {
             <div className="flex items-center gap-4">
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-indigo-50 rounded-full border border-indigo-100">
                 <Zap size={16} className="text-indigo-600 fill-indigo-600" />
-                <span className="text-sm font-bold text-indigo-700">{profile?.xp} XP</span>
+                <span className="text-sm font-bold text-indigo-700">{profile?.xp || 0} XP</span>
               </div>
               <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-rose-600 transition-colors">
                 <LogOut size={20} />
               </button>
             </div>
-          ) : (
-            <Button onClick={handleLogin}>
-              <UserIcon size={18} />
-              Sign In
-            </Button>
-          )}
+          ) : null}
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-8">
         {!user ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="flex flex-col items-center justify-center py-12 md:py-20 text-center">
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="max-w-md"
+              className="max-w-md w-full px-6 py-10 bg-white rounded-3xl border border-gray-100 shadow-xl shadow-indigo-100/40"
             >
-              <h2 className="text-4xl font-extrabold text-indigo-950 mb-4 tracking-tight">
-                ToughTask AI: Embrace the Challenge.
+              <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600 mx-auto mb-6">
+                <Target size={36} />
+              </div>
+              <h2 className="text-3xl font-extrabold text-indigo-950 mb-3 tracking-tight">
+                Welcome to ToughTask AI
               </h2>
-              <p className="text-gray-600 mb-8 text-lg">
-                Generate AI-powered tasks tailored to your goals. Earn XP for completion, or gain multipliers on failure.
+              <p className="text-gray-500 mb-8 text-sm">
+                Unlock time-boxed, AI-powered challenges. Prove your skills, build streaks, and level up.
               </p>
-              <Button onClick={handleLogin} className="w-full py-4 text-lg">
-                Get Started with Google
-              </Button>
+
+              <form onSubmit={handleLogin} className="space-y-4 text-left">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">
+                    Create or Enter Username
+                  </label>
+                  <input 
+                    type="text"
+                    value={usernameInput}
+                    onChange={(e) => setUsernameInput(e.target.value)}
+                    placeholder="Enter your unique username"
+                    className="w-full px-4 py-3.5 rounded-xl border-2 border-gray-100 focus:border-indigo-600 focus:outline-none transition-all font-semibold bg-gray-50/50 text-indigo-950 shadow-inner placeholder:font-normal"
+                    disabled={loading}
+                    maxLength={30}
+                    autoFocus
+                  />
+                  <p className="text-gray-400 text-xs mt-2.5 leading-relaxed">
+                    * <strong>Unique Username Required:</strong> This is used to track and store your XP. <strong>No password is required</strong>. Choose a distinct username so your progress is uniquely yours!
+                  </p>
+                </div>
+
+                {authError && (
+                  <div className="p-4 bg-rose-50 border border-rose-100 text-rose-800 rounded-2xl text-xs font-medium">
+                    <div className="font-bold mb-1">Error During Login</div>
+                    <p className="text-rose-700 leading-relaxed">{authError}</p>
+                  </div>
+                )}
+
+                <Button type="submit" disabled={loading} className="w-full py-4 text-lg">
+                  {loading ? (
+                    <>
+                      <Loader2 className="animate-spin" size={20} />
+                      Entering Arena...
+                    </>
+                  ) : (
+                    <>
+                      <Zap size={20} className="fill-current" />
+                      Get Started (No Password)
+                    </>
+                  )}
+                </Button>
+              </form>
             </motion.div>
           </div>
         ) : (
@@ -436,9 +516,9 @@ export default function App() {
               <Card className="p-6 bg-gradient-to-br from-indigo-600 to-violet-700 text-white border-none">
                 <div className="flex items-center gap-4 mb-6">
                   <img 
-                    src={profile?.photoURL || 'https://picsum.photos/seed/user/100/100'} 
+                    src={profile?.photoURL || `https://picsum.photos/seed/${user?.uid || 'user'}/150/150`} 
                     alt="Profile" 
-                    className="w-16 h-16 rounded-2xl border-4 border-white/20"
+                    className="w-16 h-16 rounded-2xl border-4 border-white/20 bg-indigo-50"
                   />
                   <div>
                     <h3 className="font-bold text-xl">{profile?.displayName}</h3>
@@ -452,14 +532,14 @@ export default function App() {
                       <Zap size={14} />
                       <span className="text-xs font-bold uppercase tracking-wider">Multiplier</span>
                     </div>
-                    <div className="text-2xl font-black">x{profile?.multiplier.toFixed(1)}</div>
+                    <div className="text-2xl font-black">x{(profile?.multiplier ?? 1.0).toFixed(1)}</div>
                   </div>
                   <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm">
                     <div className="flex items-center gap-2 mb-1 text-indigo-100">
                       <Flame size={14} />
                       <span className="text-xs font-bold uppercase tracking-wider">Streak</span>
                     </div>
-                    <div className="text-2xl font-black">{profile?.streak}d</div>
+                    <div className="text-2xl font-black">{profile?.streak ?? 0}d</div>
                   </div>
                 </div>
               </Card>
