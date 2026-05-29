@@ -15,6 +15,7 @@ import {
 import { auth, db } from './firebase';
 import { UserProfile, TaskActivity, NICHES, TOUGHNESS_LEVELS, AGE_GROUPS, DURATIONS, Toughness, Duration, AgeGroup } from './types';
 import { generateTask } from './services/geminiService';
+import { GoogleGenAI } from '@google/genai';
 import { 
   Trophy, 
   Zap, 
@@ -213,6 +214,10 @@ export default function App() {
   const [activeTask, setActiveTask] = useState<TaskActivity | null>(null);
   const [history, setHistory] = useState<TaskActivity[]>([]);
   const [usernameInput, setUsernameInput] = useState('');
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState(false);
+  const [tempKey, setTempKey] = useState('');
   
   const [selectedNiche, setSelectedNiche] = useState(NICHES[0]);
   const [customNiche, setCustomNiche] = useState('');
@@ -225,6 +230,8 @@ export default function App() {
     const savedUsername = localStorage.getItem('tough_task_username');
     if (savedUsername) {
       setUser({ uid: savedUsername, displayName: savedUsername });
+      const savedKey = localStorage.getItem('tough_task_gemini_key') || '';
+      setGeminiKeyInput(savedKey);
     }
     setLoading(false);
   }, []);
@@ -307,6 +314,7 @@ export default function App() {
     if (e) e.preventDefault();
     setAuthError(null);
     const cleanUsername = usernameInput.trim().toLowerCase();
+    const cleanKey = geminiKeyInput.trim();
     
     if (!cleanUsername) {
       setAuthError('Please enter a username.');
@@ -318,14 +326,36 @@ export default function App() {
       return;
     }
 
+    if (!cleanKey) {
+      setAuthError('Gemini API key is required to generate challenges.');
+      return;
+    }
+
     setLoading(true);
     try {
+      // Validate the API key via a direct verification hit
+      const ai = new GoogleGenAI({ apiKey: cleanKey });
+      try {
+        await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: "ping",
+        });
+      } catch (validationErr: any) {
+        const errorMsg = validationErr?.message || String(validationErr);
+        if (errorMsg.includes("API_KEY_INVALID") || errorMsg.includes("not valid") || errorMsg.includes("invalid key")) {
+          throw new Error("Your Gemini API key is invalid. Please double-check it and try again.");
+        } else {
+          throw new Error(`Failed to activate Gemini API: ${errorMsg}`);
+        }
+      }
+
       const userRef = doc(db, 'users', cleanUsername);
       const snap = await getDocFromServer(userRef);
       
       if (snap.exists()) {
         const existingProfile = snap.data();
         localStorage.setItem('tough_task_username', cleanUsername);
+        localStorage.setItem('tough_task_gemini_key', cleanKey);
         setUser({ uid: cleanUsername, displayName: existingProfile.displayName || usernameInput.trim() });
       } else {
         const newProfile: UserProfile = {
@@ -340,6 +370,7 @@ export default function App() {
         };
         await setDoc(userRef, newProfile);
         localStorage.setItem('tough_task_username', cleanUsername);
+        localStorage.setItem('tough_task_gemini_key', cleanKey);
         setUser({ uid: cleanUsername, displayName: usernameInput.trim() });
       }
     } catch (error: any) {
@@ -352,26 +383,46 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('tough_task_username');
+    localStorage.removeItem('tough_task_gemini_key');
     setUser(null);
     setUsernameInput('');
+    setGeminiKeyInput('');
+    setEditingKey(false);
+    setTempKey('');
   };
 
   const handleGenerate = async () => {
     if (!user) return;
+    setGenerationError(null);
+
+    const apiKey = localStorage.getItem('tough_task_gemini_key') || '';
+    if (!apiKey) {
+      setGenerationError('Gemini API key is missing. Please log out and enter your key, or configure it on the sidebar.');
+      return;
+    }
+
     const nicheToUse = selectedNiche === 'Custom' ? customNiche : selectedNiche;
     if (!nicheToUse.trim()) return;
     
     setGenerating(true);
     const path = 'tasks';
     try {
-      const taskData = await generateTask(nicheToUse, selectedToughness, selectedAgeGroup, selectedDuration);
+      const taskData = await generateTask(apiKey, nicheToUse, selectedToughness, selectedAgeGroup, selectedDuration);
       await addDoc(collection(db, path), {
         ...taskData,
         userId: user.uid,
         startedAt: new Date().toISOString(),
       });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
+    } catch (error: any) {
+      console.error('Error generating task:', error);
+      let errMsg = 'Failed to generate task. Please check your network connection.';
+      if (error?.message) {
+        errMsg = error.message;
+        if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('key is invalid') || errMsg.includes('API key not valid')) {
+          errMsg = 'Your Gemini API key is invalid or inactive. Please update it to generate new tasks.';
+        }
+      }
+      setGenerationError(errMsg);
     } finally {
       setGenerating(false);
     }
@@ -466,38 +517,60 @@ export default function App() {
                 Unlock time-boxed, AI-powered challenges. Prove your skills, build streaks, and level up.
               </p>
 
-              <form onSubmit={handleLogin} className="space-y-4 text-left">
+              <form onSubmit={handleLogin} className="space-y-5 text-left">
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">
-                    Create or Enter Username
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5">
+                    1. Create or Enter Username
                   </label>
                   <input 
                     type="text"
                     value={usernameInput}
                     onChange={(e) => setUsernameInput(e.target.value)}
                     placeholder="Enter your unique username"
-                    className="w-full px-4 py-3.5 rounded-xl border-2 border-gray-100 focus:border-indigo-600 focus:outline-none transition-all font-semibold bg-gray-50/50 text-indigo-950 shadow-inner placeholder:font-normal"
+                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-100 focus:border-indigo-600 focus:outline-none transition-all font-semibold bg-gray-50/50 text-indigo-950 shadow-inner placeholder:font-normal"
                     disabled={loading}
                     maxLength={30}
                     autoFocus
                   />
-                  <p className="text-gray-400 text-xs mt-2.5 leading-relaxed">
-                    * <strong>Unique Username Required:</strong> This is used to track and store your XP. <strong>No password is required</strong>. Choose a distinct username so your progress is uniquely yours!
+                  <p className="text-gray-400 text-[11px] mt-1.5 leading-relaxed">
+                    * <strong>Unique Username Required:</strong> This is used to track and store your XP, streak, and history on Firestore. <strong>No password is required</strong>. Choose a distinct username to make sure your progress is uniquely yours!
                   </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5">
+                    2. Google Gemini API Key
+                  </label>
+                  <input 
+                    type="password"
+                    value={geminiKeyInput}
+                    onChange={(e) => setGeminiKeyInput(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-100 focus:border-indigo-600 focus:outline-none transition-all font-mono bg-gray-50/50 text-indigo-950 shadow-inner"
+                    disabled={loading}
+                  />
+                  <div className="text-gray-400 text-[11px] mt-1.5 leading-relaxed space-y-1">
+                    <p>
+                      * <strong>Required for Task Generation:</strong> To generate personalized AI-powered challenges, you must use your own Gemini API key. All tasks will be built directly in your browser under your own API quota. Your key is stored locally and securely in your browser's local sandbox; we never send it to our servers!
+                    </p>
+                    <p>
+                      * <strong>How to get a key:</strong> You can get a free API key at <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline font-bold">Google AI Studio</a>.
+                    </p>
+                  </div>
                 </div>
 
                 {authError && (
                   <div className="p-4 bg-rose-50 border border-rose-100 text-rose-800 rounded-2xl text-xs font-medium">
-                    <div className="font-bold mb-1">Error During Login</div>
+                    <div className="font-bold mb-1">Configuration Error</div>
                     <p className="text-rose-700 leading-relaxed">{authError}</p>
                   </div>
                 )}
 
-                <Button type="submit" disabled={loading} className="w-full py-4 text-lg">
+                <Button type="submit" disabled={loading} className="w-full py-4 text-base">
                   {loading ? (
                     <>
                       <Loader2 className="animate-spin" size={20} />
-                      Entering Arena...
+                      Verifying Key & entering...
                     </>
                   ) : (
                     <>
@@ -542,6 +615,74 @@ export default function App() {
                     <div className="text-2xl font-black">{profile?.streak ?? 0}d</div>
                   </div>
                 </div>
+              </Card>
+
+              <Card className="p-6">
+                <h3 className="font-bold text-gray-900 mb-2 flex items-center gap-2">
+                  <Zap size={18} className="text-indigo-600 fill-indigo-100" />
+                  Gemini API Configuration
+                </h3>
+                {editingKey ? (
+                  <div className="space-y-3">
+                    <input 
+                      type="password"
+                      value={tempKey}
+                      onChange={(e) => setTempKey(e.target.value)}
+                      placeholder="Enter new API Key (AIzaSy...)"
+                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-600 font-mono"
+                    />
+                    <div className="flex gap-2">
+                      <Button 
+                        className="text-xs py-1.5 px-3 h-8 flex-1" 
+                        onClick={() => {
+                          const clean = tempKey.trim();
+                          if (clean) {
+                            localStorage.setItem('tough_task_gemini_key', clean);
+                            setGeminiKeyInput(clean);
+                            setEditingKey(false);
+                            setTempKey('');
+                          }
+                        }}
+                      >
+                        Save
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        className="text-xs py-1.5 px-3 h-8 flex-1"
+                        onClick={() => {
+                          setEditingKey(false);
+                          setTempKey('');
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="p-2.5 bg-indigo-50/50 rounded-xl mb-3 border border-indigo-100/40 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[11px] font-mono text-indigo-950 font-bold truncate max-w-[120px]">
+                          ••••{geminiKeyInput.slice(-6)}
+                        </span>
+                      </div>
+                      <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full">
+                        Active
+                      </span>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      className="w-full text-xs h-9 py-0 flex items-center justify-center gap-1 border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                      onClick={() => {
+                        setTempKey(geminiKeyInput);
+                        setEditingKey(true);
+                      }}
+                    >
+                      Change API Key
+                    </Button>
+                  </div>
+                )}
               </Card>
 
               <Card className="p-6">
@@ -801,6 +942,13 @@ export default function App() {
                             ))}
                           </div>
                         </div>
+
+                        {generationError && (
+                          <div className="p-4 bg-rose-50 border border-rose-100 text-rose-800 rounded-2xl text-xs font-medium text-left">
+                            <div className="font-bold mb-1">Task Generation Failed</div>
+                            <p className="text-rose-700 leading-relaxed">{generationError}</p>
+                          </div>
+                        )}
 
                         <Button 
                           className="w-full h-16 text-xl mt-4" 

@@ -1,9 +1,20 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Toughness, Duration, TaskActivity, AgeGroup } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-export async function generateTask(niche: string, toughness: Toughness, ageGroup: AgeGroup, duration: Duration): Promise<Partial<TaskActivity>> {
+export async function generateTask(
+  apiKey: string,
+  niche: string,
+  toughness: Toughness,
+  ageGroup: AgeGroup,
+  duration: Duration
+): Promise<Partial<TaskActivity>> {
+  if (!apiKey) {
+    throw new Error("Gemini API key is required to generate tasks. Please sign in with a valid key.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
   const prompt = `Generate a challenging but doable task for a user.
   Niche: ${niche}
   Toughness: ${toughness}
@@ -17,7 +28,7 @@ export async function generateTask(niche: string, toughness: Toughness, ageGroup
   Provide a catchy title and a clear description.`;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -43,3 +54,4 @@ export async function generateTask(niche: string, toughness: Toughness, ageGroup
     status: 'pending',
   };
 }
+
