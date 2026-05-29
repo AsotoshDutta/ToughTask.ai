@@ -218,6 +218,12 @@ export default function App() {
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState(false);
   const [tempKey, setTempKey] = useState('');
+
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [modalKeyInput, setModalKeyInput] = useState('');
+  const [modalUsernameInput, setModalUsernameInput] = useState('');
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [modalLoading, setModalLoading] = useState(false);
   
   const [selectedNiche, setSelectedNiche] = useState(NICHES[0]);
   const [customNiche, setCustomNiche] = useState('');
@@ -392,12 +398,14 @@ export default function App() {
   };
 
   const handleGenerate = async () => {
-    if (!user) return;
     setGenerationError(null);
 
     const apiKey = localStorage.getItem('tough_task_gemini_key') || '';
-    if (!apiKey) {
-      setGenerationError('Gemini API key is missing. Please log out and enter your key, or configure it on the sidebar.');
+    if (!user || !apiKey) {
+      setModalUsernameInput(user ? user.displayName : '');
+      setModalKeyInput(apiKey || geminiKeyInput);
+      setModalError(null);
+      setShowKeyModal(true);
       return;
     }
 
@@ -500,93 +508,12 @@ export default function App() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-8">
-        {!user ? (
-          <div className="flex flex-col items-center justify-center py-12 md:py-20 text-center">
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="max-w-md w-full px-6 py-10 bg-white rounded-3xl border border-gray-100 shadow-xl shadow-indigo-100/40"
-            >
-              <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600 mx-auto mb-6">
-                <Target size={36} />
-              </div>
-              <h2 className="text-3xl font-extrabold text-indigo-950 mb-3 tracking-tight">
-                Welcome to ToughTask AI
-              </h2>
-              <p className="text-gray-500 mb-8 text-sm">
-                Unlock time-boxed, AI-powered challenges. Prove your skills, build streaks, and level up.
-              </p>
-
-              <form onSubmit={handleLogin} className="space-y-5 text-left">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5">
-                    1. Create or Enter Username
-                  </label>
-                  <input 
-                    type="text"
-                    value={usernameInput}
-                    onChange={(e) => setUsernameInput(e.target.value)}
-                    placeholder="Enter your unique username"
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-100 focus:border-indigo-600 focus:outline-none transition-all font-semibold bg-gray-50/50 text-indigo-950 shadow-inner placeholder:font-normal"
-                    disabled={loading}
-                    maxLength={30}
-                    autoFocus
-                  />
-                  <p className="text-gray-400 text-[11px] mt-1.5 leading-relaxed">
-                    * <strong>Unique Username Required:</strong> This is used to track and store your XP, streak, and history on Firestore. <strong>No password is required</strong>. Choose a distinct username to make sure your progress is uniquely yours!
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5">
-                    2. Google Gemini API Key
-                  </label>
-                  <input 
-                    type="password"
-                    value={geminiKeyInput}
-                    onChange={(e) => setGeminiKeyInput(e.target.value)}
-                    placeholder="AIzaSy..."
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-100 focus:border-indigo-600 focus:outline-none transition-all font-mono bg-gray-50/50 text-indigo-950 shadow-inner"
-                    disabled={loading}
-                  />
-                  <div className="text-gray-400 text-[11px] mt-1.5 leading-relaxed space-y-1">
-                    <p>
-                      * <strong>Required for Task Generation:</strong> To generate personalized AI-powered challenges, you must use your own Gemini API key. All tasks will be built directly in your browser under your own API quota. Your key is stored locally and securely in your browser's local sandbox; we never send it to our servers!
-                    </p>
-                    <p>
-                      * <strong>How to get a key:</strong> You can get a free API key at <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline font-bold">Google AI Studio</a>.
-                    </p>
-                  </div>
-                </div>
-
-                {authError && (
-                  <div className="p-4 bg-rose-50 border border-rose-100 text-rose-800 rounded-2xl text-xs font-medium">
-                    <div className="font-bold mb-1">Configuration Error</div>
-                    <p className="text-rose-700 leading-relaxed">{authError}</p>
-                  </div>
-                )}
-
-                <Button type="submit" disabled={loading} className="w-full py-4 text-base">
-                  {loading ? (
-                    <>
-                      <Loader2 className="animate-spin" size={20} />
-                      Verifying Key & entering...
-                    </>
-                  ) : (
-                    <>
-                      <Zap size={20} className="fill-current" />
-                      Get Started (No Password)
-                    </>
-                  )}
-                </Button>
-              </form>
-            </motion.div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left Column: Stats & Profile */}
-            <div className="space-y-6">
-              <Card className="p-6 bg-gradient-to-br from-indigo-600 to-violet-700 text-white border-none">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column: Stats & Profile */}
+          <div className="space-y-6">
+            {user ? (
+              <>
+                <Card className="p-6 bg-gradient-to-br from-indigo-600 to-violet-700 text-white border-none">
                 <div className="flex items-center gap-4 mb-6">
                   <img 
                     src={profile?.photoURL || `https://picsum.photos/seed/${user?.uid || 'user'}/150/150`} 
@@ -724,7 +651,93 @@ export default function App() {
                   )}
                 </div>
               </Card>
-            </div>
+              </>
+            ) : (
+              <>
+                <Card className="p-6 bg-white border border-indigo-150 shadow-xl shadow-indigo-100/35 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-600" />
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600">
+                      <Target size={18} />
+                    </div>
+                    <h3 className="font-bold text-gray-900 tracking-tight">Arena Account Setup</h3>
+                  </div>
+                  <p className="text-gray-500 text-xs mb-4 leading-relaxed">
+                    To generate personalized AI-powered challenges, you must use your own Gemini API key. All tasks will be built directly under your own API quota.
+                  </p>
+
+                  <form onSubmit={handleLogin} className="space-y-4 font-sans">
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mb-1">
+                        1. Create or Enter Username
+                      </label>
+                      <input 
+                        type="text"
+                        value={usernameInput}
+                        onChange={(e) => setUsernameInput(e.target.value)}
+                        placeholder="Your unique username"
+                        className="w-full px-3 py-2 text-xs rounded-lg border-2 border-gray-100 focus:border-indigo-600 focus:outline-none transition-all font-semibold bg-gray-50/50 text-indigo-950"
+                        disabled={loading}
+                        maxLength={30}
+                      />
+                      <p className="text-gray-400 text-[9px] mt-1.5 leading-normal">
+                        Used to store XP, streaks, and achievements on Firestore. <strong>No password required</strong>.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mb-1 font-sans">
+                        2. Google Gemini API Key
+                      </label>
+                      <input 
+                        type="password"
+                        value={geminiKeyInput}
+                        onChange={(e) => setGeminiKeyInput(e.target.value)}
+                        placeholder="AIzaSy..."
+                        className="w-full px-3 py-2 text-xs rounded-lg border-2 border-gray-100 focus:border-indigo-600 focus:outline-none transition-all font-mono bg-gray-50/50 text-indigo-950"
+                        disabled={loading}
+                      />
+                      <p className="text-gray-400 text-[9px] mt-1.5 leading-normal">
+                        Stored locally in browser sandbox. Get key:{' '}
+                        <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline font-bold">
+                          Google AI Studio
+                        </a>
+                      </p>
+                    </div>
+
+                    {authError && (
+                      <div className="p-3 bg-rose-50 border border-rose-100 text-rose-800 rounded-xl text-[10px] leading-relaxed">
+                        <strong className="block mb-0.5">Configuration Error:</strong>
+                        {authError}
+                      </div>
+                    )}
+
+                    <Button type="submit" disabled={loading} className="w-full py-2.5 text-xs h-10 mt-2">
+                      {loading ? (
+                        <>
+                          <Loader2 className="animate-spin" size={14} />
+                          Verifying...
+                        </>
+                      ) : (
+                        <>
+                          <Zap size={14} className="fill-current" />
+                          Enter Arena (No Password)
+                        </>
+                      )}
+                    </Button>
+                  </form>
+                </Card>
+
+                <Card className="p-6 bg-gray-50/50 border border-gray-100/50 flex flex-col items-center justify-center text-center py-8">
+                  <Trophy size={28} className="text-gray-300 mb-2" />
+                  <h4 className="font-bold text-gray-400 text-xs uppercase tracking-wider mb-1">Stats & Streaks Locked</h4>
+                  <p className="text-gray-400 text-[11px] max-w-[200px] leading-relaxed font-sans">
+                    Set up your Arena Profile in the setup form above to unlock XP tracking, daily streaks, multipliers, and achievement history.
+                  </p>
+                </Card>
+              </>
+            )}
+          </div>
 
             {/* Middle Column: Active Task / Generator */}
             <div className="lg:col-span-2 space-y-6">
@@ -974,7 +987,6 @@ export default function App() {
               </AnimatePresence>
             </div>
           </div>
-        )}
       </main>
 
       <footer className="max-w-5xl mx-auto px-4 py-12 border-t border-gray-100 text-center">
@@ -988,6 +1000,186 @@ export default function App() {
           Challenge yourself. Grow stronger. Repeat.
         </p>
       </footer>
+
+      {/* API Key / Profile Configuration Prompt Modal */}
+      <AnimatePresence>
+        {showKeyModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="max-w-md w-full bg-white rounded-3xl p-6 shadow-2xl border border-indigo-100 flex flex-col gap-4 relative"
+            >
+              <button 
+                onClick={() => {
+                  setShowKeyModal(false);
+                  setModalError(null);
+                }}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <XCircle size={22} />
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                  <Zap size={20} className="fill-current" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-extrabold text-indigo-950 tracking-tight">Gemini API Key Required</h3>
+                  <p className="text-gray-500 text-xs">Configure your details to generate challenges</p>
+                </div>
+              </div>
+
+              <p className="text-gray-500 text-xs leading-relaxed font-sans">
+                To build personalized real-world tasks, we utilize your own Gemini API quota directly in the browser. All tasks are built securely within your computer's local sandbox – your key is never sent to our servers.
+              </p>
+
+              <div className="space-y-4 text-left font-sans">
+                {!user && (
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mb-1.5">
+                      1. Create Unique Username
+                    </label>
+                    <input 
+                      type="text"
+                      value={modalUsernameInput}
+                      onChange={(e) => setModalUsernameInput(e.target.value)}
+                      placeholder="e.g. challenger_99"
+                      className="w-full px-3 py-2 text-xs rounded-lg border-2 border-gray-100 focus:border-indigo-600 focus:outline-none transition-all font-semibold bg-gray-50/50 text-indigo-950"
+                    />
+                    <p className="text-gray-400 text-[9px] mt-1.5 leading-normal">
+                      Used to store XP, streaks, and achievements on Firestore. <strong>No password required</strong>.
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mb-1.5">
+                    {user ? 'Google Gemini API Key' : '2. Enter Google Gemini API Key'}
+                  </label>
+                  <input 
+                    type="password"
+                    value={modalKeyInput}
+                    onChange={(e) => setModalKeyInput(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full px-3 py-2 text-xs rounded-lg border-2 border-gray-100 focus:border-indigo-600 focus:outline-none transition-all font-mono bg-gray-50/50 text-indigo-950"
+                  />
+                  <p className="text-gray-400 text-[9px] mt-1.5 leading-normal">
+                    Get a free API key instantly at{' '}
+                    <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline font-bold">
+                      Google AI Studio
+                    </a>.
+                  </p>
+                </div>
+
+                {modalError && (
+                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-800 rounded-xl text-[10px] leading-relaxed">
+                    <strong className="block mb-0.5">Configuration Error:</strong>
+                    {modalError}
+                  </div>
+                )}
+
+                <Button 
+                  disabled={modalLoading}
+                  onClick={async () => {
+                    setModalError(null);
+                    const cleanKey = modalKeyInput.trim();
+                    const cleanUsername = user ? user.uid : modalUsernameInput.trim().toLowerCase();
+                    const displayName = user ? user.displayName : modalUsernameInput.trim();
+
+                    if (!cleanUsername) {
+                      setModalError('Please enter a username.');
+                      return;
+                    }
+                    if (!/^[a-zA-Z0-9_\-]+$/.test(cleanUsername)) {
+                      setModalError('Username can only contain alphanumeric characters, underscores, or hyphens.');
+                      return;
+                    }
+                    if (!cleanKey) {
+                      setModalError('Please enter your Gemini API Key.');
+                      return;
+                    }
+
+                    setModalLoading(true);
+                    try {
+                      // Validate key via ping verification
+                      const ai = new GoogleGenAI({ apiKey: cleanKey });
+                      try {
+                        await ai.models.generateContent({
+                          model: "gemini-2.5-flash",
+                          contents: "ping",
+                        });
+                      } catch (validationErr: any) {
+                        const errorMsg = validationErr?.message || String(validationErr);
+                        if (errorMsg.includes("API_KEY_INVALID") || errorMsg.includes("not valid") || errorMsg.includes("invalid key")) {
+                          throw new Error("Your Gemini API key is invalid. Please double-check it and try again.");
+                        } else {
+                          throw new Error(`Failed to activate Gemini API: ${errorMsg}`);
+                        }
+                      }
+
+                      // Key is valid! Save profile & sign in
+                      const userRef = doc(db, 'users', cleanUsername);
+                      const snap = await getDocFromServer(userRef);
+                      
+                      if (snap.exists()) {
+                        const existingProfile = snap.data();
+                        localStorage.setItem('tough_task_username', cleanUsername);
+                        localStorage.setItem('tough_task_gemini_key', cleanKey);
+                        setUser({ uid: cleanUsername, displayName: existingProfile.displayName || displayName });
+                      } else {
+                        const newProfile: UserProfile = {
+                          uid: cleanUsername,
+                          displayName: displayName,
+                          email: null,
+                          photoURL: `https://picsum.photos/seed/${cleanUsername}/150/150`,
+                          xp: 0,
+                          multiplier: 1.0,
+                          streak: 0,
+                          createdAt: new Date().toISOString(),
+                        };
+                        await setDoc(userRef, newProfile);
+                        localStorage.setItem('tough_task_username', cleanUsername);
+                        localStorage.setItem('tough_task_gemini_key', cleanKey);
+                        setUser({ uid: cleanUsername, displayName: displayName });
+                      }
+
+                      // Auto key sync to main state
+                      setGeminiKeyInput(cleanKey);
+                      setShowKeyModal(false);
+                      setModalError(null);
+                      
+                      // Trigger challenge generation
+                      setTimeout(() => {
+                        handleGenerate();
+                      }, 100);
+
+                    } catch (err: any) {
+                      setModalError(err?.message || 'Failed to authenticate profile. Please try again.');
+                    } finally {
+                      setModalLoading(false);
+                    }
+                  }} 
+                  className="w-full h-11 py-2.5 text-xs font-semibold"
+                >
+                  {modalLoading ? (
+                    <>
+                      <Loader2 className="animate-spin" size={14} />
+                      Verifying Key & Entering...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={14} />
+                      Submit & Generate Task
+                    </>
+                  )}
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
